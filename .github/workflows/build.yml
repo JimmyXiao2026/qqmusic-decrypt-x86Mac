@@ -124,10 +124,14 @@ jobs:
           cd release
           rm -f qqmusic-decrypt-macos-x86_64.zip
           zip -qr qqmusic-decrypt-macos-x86_64.zip qqmusic-decrypt-macos-x86_64
-          shasum -a 256 qqmusic-decrypt-macos-x86_64.zip | tee SHA256SUMS.txt
+          sum=$(shasum -a 256 qqmusic-decrypt-macos-x86_64.zip | awk '{print $1}')
+          printf '%s  %s\n' "$sum" "qqmusic-decrypt-macos-x86_64.zip" | tee SHA256SUMS.txt
+          cp SHA256SUMS.txt qqmusic-decrypt-macos-x86_64/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: qqmusic-decrypt-macos-x86_64
-          path: release/qqmusic-decrypt-macos-x86_64.zip
+          path: |
+            release/qqmusic-decrypt-macos-x86_64.zip
+            release/SHA256SUMS.txt
