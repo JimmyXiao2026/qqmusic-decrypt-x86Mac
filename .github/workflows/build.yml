@@ -92,25 +92,31 @@ jobs:
           "$BIN/ffmpeg" -version 2>&1 | head -3
           "$BIN/ffprobe" -version 2>&1 | head -1
 
-      - name: Build onefile binary (PyInstaller)
+      - name: Build onefile binaries (PyInstaller)
         shell: bash
         run: |
           set -euo pipefail
+          ADD_BIN="--add-binary bin/ffmpeg:bin --add-binary bin/ffprobe:bin --add-binary bin/*.dylib:bin"
+          # 完整版
           pyinstaller --onefile --console --clean \
             --name qqmusic-decrypt-mac \
-            --add-binary "bin/ffmpeg:bin" \
-            --add-binary "bin/ffprobe:bin" \
-            --add-binary "bin/*.dylib:bin" \
+            $ADD_BIN \
+            qqmusic_decrypt.py
+          # 简化版（--simple：处理当前目录，输出 ~/Music/QQMusicDecrypted/，完成按 Enter 退出）
+          pyinstaller --onefile --console --clean \
+            --name qqmusic-decrypt-mac-simple \
+            $ADD_BIN \
             qqmusic_decrypt.py
           ls -la dist/
 
-      - name: Verify built binary
+      - name: Verify built binaries
         shell: bash
         run: |
           set -euo pipefail
-          file dist/qqmusic-decrypt-mac
+          file dist/qqmusic-decrypt-mac dist/qqmusic-decrypt-mac-simple
           arch -x86_64 dist/qqmusic-decrypt-mac --self-test
-          arch -x86_64 dist/qqmusic-decrypt-mac --debug-tools
+          arch -x86_64 dist/qqmusic-decrypt-mac-simple --self-test
+          arch -x86_64 dist/qqmusic-decrypt-mac-simple --debug-tools
 
       - name: Package release zip
         shell: bash
@@ -118,15 +124,14 @@ jobs:
           set -euo pipefail
           REL=release/qqmusic-decrypt-macos-x86_64
           mkdir -p "$REL"
-          cp dist/qqmusic-decrypt-mac "$REL/"
-          cp Start-Mac.command README.md DISCLAIMER.md TECHNICAL.md LICENSE "$REL/" 2>/dev/null || true
-          chmod +x "$REL/qqmusic-decrypt-mac" "$REL/Start-Mac.command"
+          cp dist/qqmusic-decrypt-mac dist/qqmusic-decrypt-mac-simple "$REL/"
+          cp qqmusic-decrypt-simple.command Start-Mac.command README.md DISCLAIMER.md TECHNICAL.md LICENSE "$REL/" 2>/dev/null || true
+          chmod +x "$REL/qqmusic-decrypt-mac" "$REL/qqmusic-decrypt-mac-simple" "$REL/qqmusic-decrypt-simple.command" "$REL/Start-Mac.command" 2>/dev/null || true
           cd release
           rm -f qqmusic-decrypt-macos-x86_64.zip
           zip -qr qqmusic-decrypt-macos-x86_64.zip qqmusic-decrypt-macos-x86_64
           sum=$(shasum -a 256 qqmusic-decrypt-macos-x86_64.zip | awk '{print $1}')
           printf '%s  %s\n' "$sum" "qqmusic-decrypt-macos-x86_64.zip" | tee SHA256SUMS.txt
-          cp SHA256SUMS.txt qqmusic-decrypt-macos-x86_64/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

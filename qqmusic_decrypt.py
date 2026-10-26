@@ -1992,6 +1992,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--debug-tools", action="store_true",
                    help="打印内置 ffmpeg/ffprobe 定位与版本后退出")
     p.add_argument("--self-test", action="store_true", help="运行内置自测后退出")
+    p.add_argument("--simple", action="store_true",
+                   help="简化版：处理当前目录，输出 ~/Music/QQMusicDecrypted/，完成按 Enter 退出")
     return p
 
 
@@ -2564,6 +2566,50 @@ class InteractiveCli:
             self.pause()
 
 
+def run_simple_mode(opts: argparse.Namespace) -> int:
+    """简化版：处理当前目录（启动器已 cd 到音乐目录），
+    输出固定 ~/Music/QQMusicDecrypted/，完成后按 Enter 退出。"""
+    src_dir = os.path.abspath(os.getcwd())
+    out_dir = os.path.expanduser("~/Music/QQMusicDecrypted")
+    opts.out_dir = out_dir
+    try:
+        probe_writable_dir(out_dir)
+    except OSError as e:
+        print(f"[错误] 输出目录不可写: {out_dir} -> {e}")
+        try:
+            input("\n按 Enter 退出...")
+        except (EOFError, KeyboardInterrupt):
+            print()
+        return 1
+    print(f"输入目录: {src_dir}")
+    print(f"输出目录: {out_dir}")
+    files = discover([src_dir], False)
+    if not files:
+        print("当前目录没有找到受支持的文件。")
+    else:
+        print(f"发现 {len(files)} 个候选文件")
+        results: List[Result] = []
+        ctx = BatchContext(opts)
+        try:
+            for i, f in enumerate(files, 1):
+                results.append(process_file(f, ctx, i, len(files)))
+                if ctx.stop:
+                    print(f"!! 凭据失效，停止后续: {ctx.stop_reason}", file=sys.stderr)
+                    break
+        finally:
+            ctx.close()
+        ok = sum(1 for r in results if r.status == "ok")
+        skip = sum(1 for r in results if r.status == "skip")
+        fail = sum(1 for r in results if r.status == "fail")
+        print(f"  处理完成: 成功 {ok}, 跳过 {skip}, 失败 {fail}, "
+              f"API 调用 {ctx.api_calls} 次")
+    try:
+        input("\n按 Enter 退出...")
+    except (EOFError, KeyboardInterrupt):
+        print()
+    return 0
+
+
 def run_interactive(opts: argparse.Namespace) -> int:
     cli = InteractiveCli(opts)
     try:
@@ -2621,6 +2667,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 print(f"  rc={r.returncode} out={r.stdout[:80]!r} "
                       f"err={r.stderr[:120]!r}")
         return 0
+
+    if opts.simple:
+        return run_simple_mode(opts)
 
     if opts.convert:
         return run_convert_mode(opts)

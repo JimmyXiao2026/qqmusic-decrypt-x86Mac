@@ -81,6 +81,16 @@ python3 qqmusic_decrypt.py --convert --format flac ~/Music/某目录
 python3 qqmusic_decrypt.py --convert --format mp3 song.wav song.m4a
 ```
 
+### 简化版（一键解密当前目录）
+
+把 `qqmusic-decrypt-simple.command` 放到要解密的音乐所在目录，双击运行：
+
+- 若 `~/Library/QQMusicDecrypted/qqmusic-decrypt-mac-simple` 已存在，直接运行；
+- 否则检查当前目录是否有 `qqmusic-decrypt-mac-simple`：
+  - 有 → 自动**移动**到 `~/Library/QQMusicDecrypted/` 后运行（只移一次，之后双击即用）；
+  - 没有 → 提示缺失并退出；
+- 程序自动解密当前目录所有受支持文件，输出固定到 `~/Music/QQMusicDecrypted/`，完成后按 Enter 退出整个脚本与窗口。
+
 ### macOS 打包版被 Gatekeeper 拦截的解决方法
 
 下载的 `qqmusic-decrypt-mac` 未签名，macOS 可能提示“已损坏/无法验证开发者/无法打开”。
@@ -164,6 +174,7 @@ chmod +x ~/Downloads/qqmusic-decrypt-macos-arm64/qqmusic-decrypt-mac
 | 包 | 内容 | 大小 |
 |---|---|---|
 | `release/qqmusic-decrypt-macos-arm64.zip` | macOS arm64 单文件 + 文档 | 23.6MB |
+| `qqmusic-decrypt-macos-x86_64.zip`（GitHub Actions artifact） | macOS Intel 单文件（完整版 + 简化版）+ simple 启动器 + 文档 | ~45MB |
 | `release/qqmusic-decrypt-win64.zip` | Windows x64 单文件 exe + 文档 | 180MB |
 
 （校验和见 `release/SHA256SUMS.txt`）
