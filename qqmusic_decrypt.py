@@ -1402,12 +1402,12 @@ def save_audio_with_conversion(audio: bytes, folder: Path, stem: str,
 
     返回 (最终路径, 备注)。转换失败会保留源格式并记录日志。
     """
-    final_ext = src_ext if (not want_ext or want_ext == "auto") else want_ext
+    final_ext = _dotless(src_ext if (not want_ext or want_ext == "auto") else want_ext)
     out_path = folder / f"{stem}.{final_ext}"
-    if final_ext == src_ext:
+    if final_ext == _dotless(src_ext):
         out_path.write_bytes(audio)
         return out_path, ""
-    src_tmp = str(out_path) + f".src{src_ext}"
+    src_tmp = str(out_path) + f".src{_dotless(src_ext)}"
     Path(src_tmp).write_bytes(audio)
     try:
         conv_tmp = convert_audio(src_tmp, final_ext)
@@ -1416,10 +1416,10 @@ def save_audio_with_conversion(audio: bytes, folder: Path, stem: str,
         return out_path, f" 转{final_ext.upper()}"
     except QmcError as ce:
         log_warning(f"{stem}: 转换失败，保留源格式: {ce}")
-        fallback = folder / f"{stem}.{src_ext}"
+        fallback = folder / f"{stem}.{_dotless(src_ext)}"
         n = 1
         while fallback.exists() and not overwrite:
-            fallback = folder / f"{stem} ({n}).{src_ext}"
+            fallback = folder / f"{stem} ({n}).{_dotless(src_ext)}"
             n += 1
         os.replace(src_tmp, fallback)
         return fallback, " 转换失败保留源格式"
@@ -1478,6 +1478,11 @@ def probe_writable_dir(path: str) -> None:
     probe.unlink()
 
 
+def _dotless(ext: str) -> str:
+    """规范化扩展名：去掉前导点，统一内部用不带点的扩展名拼接文件名。"""
+    return ext[1:] if ext and ext.startswith(".") else ext
+
+
 def sanitize_name(name: str, max_len: int = 120) -> str:
     name = re.sub(r'[\\/:*?"<>|\r\n\t]+', "_", name).strip(" .")
     name = re.sub(r"\s+", " ", name)
@@ -1495,7 +1500,7 @@ def pick_output_path(out_dir: str, source: Path, title: Optional[str],
         base = Path(out_dir)
         stem = sanitize_name(title) if title else source.name.rsplit(".", 1)[0]
     base.mkdir(parents=True, exist_ok=True)
-    return str(base / f"{stem}{ext}")
+    return str(base / f"{stem}.{_dotless(ext)}")
 
 
 @dataclass
@@ -1697,11 +1702,11 @@ def process_file(path: str, ctx: BatchContext, idx: int, total: int) -> Result:
             raise QmcError(f"期望无损文件却得到 MP3 签名（{out_ext}），可能用错 ekey")
 
         want_ext = str(getattr(opts, "out_format", "auto") or "auto")
-        final_ext = out_ext if want_ext == "auto" else want_ext
+        final_ext = _dotless(out_ext if want_ext == "auto" else want_ext)
         base_dir = Path(opts.out_dir if not opts.in_place else str(src.parent))
         stem = (src.name.rsplit(".", 1)[0] if opts.in_place
                 else (sanitize_name(title) if title else src.name.rsplit(".", 1)[0]))
-        cand = base_dir / f"{stem}{final_ext}"
+        cand = base_dir / f"{stem}.{final_ext}"
         if cand.exists() and not opts.overwrite:
             print(f"[{idx}/{total}] SKIP {path}  输出已存在: {cand}")
             return Result(path, "skip", f"输出已存在: {cand}")
@@ -1784,7 +1789,7 @@ def convert_file_list(files: Sequence[str], opts: argparse.Namespace) -> Tuple[i
                 print(f"[{i}/{len(files)}] SKIP {src.name}（已是目标格式）")
                 skip += 1
                 continue
-            dst = out_dir / f"{sanitize_name(src.stem)}.{opts.out_format}"
+            dst = out_dir / f"{sanitize_name(src.stem)}.{_dotless(opts.out_format)}"
             if dst.exists() and not opts.overwrite:
                 print(f"[{i}/{len(files)}] SKIP {src.name}（输出已存在: {dst}）")
                 skip += 1
@@ -2064,7 +2069,7 @@ def download_playlist_songs(ctx: BatchContext, tid: int, default_name: str,
             audio, ext, quality = download_song_bytes(ctx, song, qualities)
             fname = sanitize_name(f"{artists} - {name}") if artists else sanitize_name(name)
             want_ext = str(getattr(opts, "out_format", "auto") or "auto")
-            final_ext = ext if want_ext == "auto" else want_ext
+            final_ext = _dotless(ext if want_ext == "auto" else want_ext)
             out_path = folder / f"{fname}.{final_ext}"
             if out_path.exists() and not opts.overwrite:
                 print(f"[{i}/{len(songs)}] SKIP {fname}.{final_ext}  (已存在)")
