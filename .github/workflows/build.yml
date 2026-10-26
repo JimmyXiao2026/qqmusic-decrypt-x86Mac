@@ -1,54 +1,133 @@
-name: Build
+name: Build macOS Intel (x86_64)
+
 on:
   push:
     branches: [ main ]
   workflow_dispatch: # 支持手动点击运行
 
+concurrency:
+  group: build-macos-x86_64
+  cancel-in-progress: false
+
 jobs:
   build:
-    runs-on: macos-latest
-    strategy:
-      matrix:
-        target:
-          - aarch64-apple-darwin
-          - x86_64-apple-darwin
+    name: macOS x86_64 (Intel)
+    runs-on: macos-15-intel # Intel runner，PyInstaller 不支持交叉编译，必须在 x86_64 上构建
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          toolchain: stable
-          target: ${{ matrix.target }}
-          override: true
+          python-version: '3.11'
 
-      - name: Build release binary
-        run: cargo build --target ${{ matrix.target }} --release
+      - name: Install PyInstaller
+        run: pip install --quiet pyinstaller
 
-      - name: Prepare artifact
+      - name: Install ffmpeg (Intel)
+        run: brew install ffmpeg
+
+      - name: Collect ffmpeg/ffprobe and dependency dylibs
+        shell: bash
         run: |
-          mkdir -p out
-          cp target/${{ matrix.target }}/release/qqmusic-decrypt out/decrypt
-          # 给command脚本
-          cat > out/qqmusic-decrypt.command <<'EOF'
-#!/bin/zsh
-ARCH=$(arch)
-SCRIPT_DIR=$(cd "$(dirname "$0")"; pwd)
-if [ "$ARCH" = "arm64" ]; then
-    BIN="${SCRIPT_DIR}/decrypt-arm64"
-else
-    BIN="${SCRIPT_DIR}/decrypt-x86_64"
-fi
-chmod +x "$BIN"
-"$BIN"
-EOF
-          chmod +x out/qqmusic-decrypt.command
-          # 重命名区分架构
-          mv out/decrypt out/decrypt-${{ matrix.target }}
+          set -euo pipefail
+          BIN=bin
+          mkdir -p "$BIN"
+          FFMPEG="$(command -v ffmpeg)"
+          FFPROBE="$(command -v ffprobe)"
+          echo "ffmpeg=$FFMPEG  ffprobe=$FFPROBE"
+          cp -f "$FFMPEG" "$BIN/ffmpeg"
+          cp -f "$FFPROBE" "$BIN/ffprobe"
+          chmod +x "$BIN/ffmpeg" "$BIN/ffprobe"
+
+          # 递归收集所有非系统依赖 dylib 到 bin/（文件一旦复制即存在，天然防循环）
+          copy_deps() {
+            local file="$1" dep real
+            otool -L "$file" | tail -n +2 | sed 's/^[[:space:]]*//; s/ (compatibility.*$//' | while read -r dep; do
+              case "$dep" in
+                /usr/lib/*|/System/*) continue ;;                 # 系统库，不复制
+                @loader_path/*|@executable_path/*) continue ;;
+                @rpath/*)
+                  real=""
+                  for rp in $(otool -l "$file" | awk '/^ *cmd LC_RPATH/{getline;getline;print $2}'); do
+                    if [ -f "${rp}/${dep#@rpath/}" ]; then real="${rp}/${dep#@rpath/}"; break; fi
+                  done
+                  ;;
+                /*) real="$dep" ;;
+                *) continue ;;
+              esac
+              if [ -z "$real" ]; then echo "WARN: 无法解析依赖 $dep of $file"; continue; fi
+              local base
+              base="$(basename "$real")"
+              if [ ! -e "$BIN/$base" ]; then
+                echo "copy $real -> $BIN/$base"
+                cp -f "$real" "$BIN/$base"
+                copy_deps "$real"
+              fi
+            done
+          }
+          copy_deps "$FFMPEG"
+          copy_deps "$FFPROBE"
+
+          # 统一把 dylib 的 install_name 与所有引用改写为 @loader_path/<basename>
+          for f in "$BIN"/*; do
+            [ -f "$f" ] || continue
+            case "$f" in
+              *.dylib) install_name_tool -id "@loader_path/$(basename "$f")" "$f" 2>/dev/null || true ;;
+            esac
+            otool -L "$f" | tail -n +2 | sed 's/^[[:space:]]*//; s/ (compatibility.*$//' | while read -r dep; do
+              case "$dep" in
+                /usr/lib/*|/System/*|@*) continue ;;
+                /*)
+                  install_name_tool -change "$dep" "@loader_path/$(basename "$dep")" "$f" 2>/dev/null || true
+                  ;;
+              esac
+            done
+          done
+
+          echo "---- collected bin/ ----"
+          ls -la "$BIN"
+          echo "---- verify ffmpeg standalone ----"
+          "$BIN/ffmpeg" -version 2>&1 | head -3
+          "$BIN/ffprobe" -version 2>&1 | head -1
+
+      - name: Build onefile binary (PyInstaller)
+        shell: bash
+        run: |
+          set -euo pipefail
+          pyinstaller --onefile --console --clean \
+            --name qqmusic-decrypt-mac \
+            --add-binary "bin/ffmpeg:bin" \
+            --add-binary "bin/ffprobe:bin" \
+            --add-binary "bin/*.dylib:bin" \
+            qqmusic_decrypt.py
+          ls -la dist/
+
+      - name: Verify built binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          file dist/qqmusic-decrypt-mac
+          arch -x86_64 dist/qqmusic-decrypt-mac --self-test
+          arch -x86_64 dist/qqmusic-decrypt-mac --debug-tools
+
+      - name: Package release zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          REL=release/qqmusic-decrypt-macos-x86_64
+          mkdir -p "$REL"
+          cp dist/qqmusic-decrypt-mac "$REL/"
+          cp Start-Mac.command README.md DISCLAIMER.md TECHNICAL.md LICENSE "$REL/" 2>/dev/null || true
+          chmod +x "$REL/qqmusic-decrypt-mac" "$REL/Start-Mac.command"
+          cd release
+          rm -f qqmusic-decrypt-macos-x86_64.zip
+          zip -qr qqmusic-decrypt-macos-x86_64.zip qqmusic-decrypt-macos-x86_64
+          shasum -a 256 qqmusic-decrypt-macos-x86_64.zip | tee SHA256SUMS.txt
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bin-${{ matrix.target }}
-          path: out/
+          name: qqmusic-decrypt-macos-x86_64
+          path: release/qqmusic-decrypt-macos-x86_64.zip

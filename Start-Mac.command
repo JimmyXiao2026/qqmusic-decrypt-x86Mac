@@ -9,6 +9,7 @@ CANDIDATES=(
   "./qqmusic-decrypt-mac"
   "./dist/qqmusic-decrypt-mac"
   "./release/qqmusic-decrypt-macos-arm64/qqmusic-decrypt-mac"
+  "./release/qqmusic-decrypt-macos-x86_64/qqmusic-decrypt-mac"
 )
 
 BIN=""
