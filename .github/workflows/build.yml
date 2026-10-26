@@ -1,0 +1,54 @@
+name: Build
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: # 支持手动点击运行
+
+jobs:
+  build:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        target:
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Build release binary
+        run: cargo build --target ${{ matrix.target }} --release
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p out
+          cp target/${{ matrix.target }}/release/qqmusic-decrypt out/decrypt
+          # 给command脚本
+          cat > out/qqmusic-decrypt.command <<'EOF'
+#!/bin/zsh
+ARCH=$(arch)
+SCRIPT_DIR=$(cd "$(dirname "$0")"; pwd)
+if [ "$ARCH" = "arm64" ]; then
+    BIN="${SCRIPT_DIR}/decrypt-arm64"
+else
+    BIN="${SCRIPT_DIR}/decrypt-x86_64"
+fi
+chmod +x "$BIN"
+"$BIN"
+EOF
+          chmod +x out/qqmusic-decrypt.command
+          # 重命名区分架构
+          mv out/decrypt out/decrypt-${{ matrix.target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bin-${{ matrix.target }}
+          path: out/
