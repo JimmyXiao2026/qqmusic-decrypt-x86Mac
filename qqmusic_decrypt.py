@@ -2622,6 +2622,12 @@ def run_interactive(opts: argparse.Namespace) -> int:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     opts = build_arg_parser().parse_args(argv)
     global API_PLATFORM
+    # 简化版二进制（进程名含 "simple"）且未指定其他模式时，默认进入简化流程
+    if not opts.simple:
+        _act = (opts.interactive or opts.convert or opts.self_test or
+                opts.debug_tools or opts.list_playlists or opts.playlist or opts.favorites)
+        if not _act and "simple" in os.path.basename(sys.argv[0]).lower():
+            opts.simple = True
     if opts.platform != "auto":
         API_PLATFORM = opts.platform
     if opts.proxy:

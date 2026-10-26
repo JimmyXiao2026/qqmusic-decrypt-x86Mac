@@ -16,7 +16,8 @@ DEST_BIN="$DEST_DIR/qqmusic-decrypt-mac-simple"
 run_bin() {
   xattr -dr com.apple.quarantine "$DEST_BIN" 2>/dev/null
   chmod +x "$DEST_BIN" 2>/dev/null
-  exec "$DEST_BIN"
+  # --simple：直接解密当前目录（本脚本所在目录），输出 ~/Music/QQMusicDecrypted/，完成按 Enter 退出
+  exec "$DEST_BIN" --simple
 }
 
 if [ -f "$DEST_BIN" ]; then
